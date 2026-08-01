@@ -72,7 +72,7 @@ class TimecodeCalculator(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
 
-        self.title("Timecode Calculator")
+        self.title("JAIDE")
         self.resizable(False, False)
         self.configure(padx=20, pady=20)
 
@@ -87,8 +87,8 @@ class TimecodeCalculator(tk.Tk):
     def _build_interface(self) -> None:
         title = ttk.Label(
             self,
-            text="Timecode Calculator",
-            font=("TkDefaultFont", 16, "bold"),
+            text="JAIDE",
+            font=("TkDefaultFont", 24, "bold"),
         )
         title.grid(
             row=0,
