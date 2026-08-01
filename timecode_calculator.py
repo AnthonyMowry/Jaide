@@ -116,16 +116,17 @@ class TimecodeCalculator(tk.Tk):
             pady=6,
         )
 
-        frame_rate_entry = ttk.Spinbox(
+        frame_rate_dropdown = ttk.Combobox(
             self,
-            from_=1,
-            to=120,
             textvariable=self.frame_rate,
+            values=("24", "30", "59", "60"),
+            state="readonly",
             width=8,
             justify="center",
             font=("TkFixedFont", 13),
         )
-        frame_rate_entry.grid(
+
+        frame_rate_dropdown.grid(
             row=2,
             column=1,
             columnspan=2,
