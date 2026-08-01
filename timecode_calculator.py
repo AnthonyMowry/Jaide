@@ -2,63 +2,188 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 
-def validate_frame_rate(frame_rate_text: str) -> int:
-    """Validate and return the selected frame rate."""
-    try:
-        frame_rate = int(frame_rate_text)
-    except ValueError as exc:
-        raise ValueError("Frame rate must be a whole number.") from exc
-
-    if frame_rate <= 0:
-        raise ValueError("Frame rate must be greater than zero.")
-
-    return frame_rate
+FRAME_RATES = ("24", "30", "59", "60")
 
 
-def timecode_to_frames(timecode: str, fps: int) -> int:
-    """Convert HH:MM:SS:FF timecode to total frames."""
-    parts = timecode.strip().split(":")
+class TimecodeInput(ttk.Frame):
+    """A reusable HH:MM:SS:FF timecode input."""
 
-    if len(parts) != 4:
-        raise ValueError("Use the format HH:MM:SS:FF.")
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
 
-    try:
-        hours, minutes, seconds, frames = (
-            int(part) for part in parts
-        )
-    except ValueError as exc:
-        raise ValueError(
-            "Timecode values must be whole numbers."
-        ) from exc
+        self.hours = tk.StringVar(value="00")
+        self.minutes = tk.StringVar(value="00")
+        self.seconds = tk.StringVar(value="00")
+        self.frames = tk.StringVar(value="00")
 
-    if min(hours, minutes, seconds, frames) < 0:
-        raise ValueError(
-            "Enter positive values only. "
-            "Subtraction may produce a negative result."
+        self.variables = (
+            self.hours,
+            self.minutes,
+            self.seconds,
+            self.frames,
         )
 
-    if minutes >= 60:
-        raise ValueError("Minutes must be between 0 and 59.")
+        labels = ("HH", "MM", "SS", "FF")
 
-    if seconds >= 60:
-        raise ValueError("Seconds must be between 0 and 59.")
-
-    if frames >= fps:
-        raise ValueError(
-            f"At {fps} FPS, frames must be between 0 and {fps - 1}."
+        validation = (
+            self.register(self._validate_integer),
+            "%P",
         )
 
-    return (((hours * 60) + minutes) * 60 + seconds) * fps + frames
+        for index, (variable, label_text) in enumerate(
+            zip(self.variables, labels)
+        ):
+            entry_column = index * 2
+
+            entry = ttk.Entry(
+                self,
+                textvariable=variable,
+                width=4,
+                justify="center",
+                font=("TkFixedFont", 13),
+                validate="key",
+                validatecommand=validation,
+            )
+            entry.grid(
+                row=0,
+                column=entry_column,
+                padx=2,
+            )
+
+            entry.bind(
+                "<FocusIn>",
+                lambda _event, widget=entry: widget.select_range(0, "end"),
+            )
+
+            entry.bind(
+                "<FocusOut>",
+                lambda _event, value=variable: self._pad_value(value),
+            )
+
+            ttk.Label(
+                self,
+                text=label_text,
+                anchor="center",
+            ).grid(
+                row=1,
+                column=entry_column,
+                pady=(3, 0),
+            )
+
+            if index < 3:
+                ttk.Label(
+                    self,
+                    text=":",
+                    font=("TkFixedFont", 13, "bold"),
+                ).grid(
+                    row=0,
+                    column=entry_column + 1,
+                )
+
+    @staticmethod
+    def _validate_integer(proposed_value: str) -> bool:
+        """
+        Allow blank input while editing or an integer containing
+        no more than two digits.
+        """
+        return (
+            proposed_value == ""
+            or (
+                proposed_value.isdigit()
+                and len(proposed_value) <= 2
+            )
+        )
+
+    @staticmethod
+    def _pad_value(variable: tk.StringVar) -> None:
+        """Convert blank values to 00 and pad single digits."""
+        value = variable.get().strip()
+
+        if value == "":
+            variable.set("00")
+        else:
+            variable.set(value.zfill(2))
+
+    def get_values(self) -> tuple[int, int, int, int]:
+        """Return the four entered timecode values as integers."""
+        values = []
+
+        for variable in self.variables:
+            text = variable.get().strip()
+            values.append(int(text) if text else 0)
+
+        return tuple(values)
+
+    def to_frames(
+            self,
+            fps: int,
+            hour_format: int,
+            field_name: str,
+            use_hour_format: bool = True,
+        ) -> int:
+            """Validate the entered timecode and convert it to frames."""
+            hours, minutes, seconds, frames = self.get_values()
+
+            # Only apply the 12/24-hour restriction when requested.
+            if use_hour_format:
+                if hour_format == 12:
+                    if not 0 <= hours <= 12:
+                        raise ValueError(
+                            f"{field_name}: hours must be between 00 and 12 "
+                            "in 12-hour mode."
+                        )
+                else:
+                    if not 0 <= hours <= 23:
+                        raise ValueError(
+                            f"{field_name}: hours must be between 00 and 23 "
+                            "in 24-hour mode."
+                        )
+
+            if not 0 <= minutes <= 59:
+                raise ValueError(
+                    f"{field_name}: minutes must be between 00 and 59."
+                )
+
+            if not 0 <= seconds <= 59:
+                raise ValueError(
+                    f"{field_name}: seconds must be between 00 and 59."
+                )
+
+            if not 0 <= frames < fps:
+                raise ValueError(
+                    f"{field_name}: at {fps} FPS, frames must be between "
+                    f"00 and {fps - 1:02d}."
+                )
+
+            return (
+                (((hours * 60) + minutes) * 60 + seconds)
+                * fps
+                + frames
+            )
+
+    def clear(self) -> None:
+        """Reset all four boxes to zero."""
+        for variable in self.variables:
+            variable.set("00")
 
 
 def frames_to_timecode(total_frames: int, fps: int) -> str:
-    """Convert total frames to normalized HH:MM:SS:FF timecode."""
+    """Convert a total number of frames to HH:MM:SS:FF."""
     sign = "-" if total_frames < 0 else ""
     total_frames = abs(total_frames)
 
-    hours, remainder = divmod(total_frames, 60 * 60 * fps)
-    minutes, remainder = divmod(remainder, 60 * fps)
-    seconds, frames = divmod(remainder, fps)
+    hours, remainder = divmod(
+        total_frames,
+        60 * 60 * fps,
+    )
+    minutes, remainder = divmod(
+        remainder,
+        60 * fps,
+    )
+    seconds, frames = divmod(
+        remainder,
+        fps,
+    )
 
     return (
         f"{sign}{hours:02d}:"
@@ -72,17 +197,42 @@ class TimecodeCalculator(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
 
-        self.title("JAIDE")
+        self.title("Jaide Timecode Calculator")
         self.resizable(False, False)
-        self.configure(padx=20, pady=20)
+        self.configure(
+            padx=20,
+            pady=20,
+        )
 
         self.frame_rate = tk.StringVar(value="30")
-        self.first_timecode = tk.StringVar(value="00:00:00:00")
-        self.second_timecode = tk.StringVar(value="00:00:00:00")
-        self.third_timecode = tk.StringVar(value="00:00:00:00")
+        self.operation = tk.StringVar(value="Add")
+        self.hour_format = tk.IntVar(value=24)
         self.result = tk.StringVar(value="00:00:00:00")
 
+        self.settings_window = None
+
+        self._build_menu()
         self._build_interface()
+        self._update_operation_display()
+
+    def _build_menu(self) -> None:
+        menu_bar = tk.Menu(self)
+
+        options_menu = tk.Menu(
+            menu_bar,
+            tearoff=False,
+        )
+        options_menu.add_command(
+            label="Settings...",
+            command=self.open_settings,
+        )
+
+        menu_bar.add_cascade(
+            label="Options",
+            menu=options_menu,
+        )
+
+        self.config(menu=menu_bar)
 
     def _build_interface(self) -> None:
         title = ttk.Label(
@@ -93,7 +243,7 @@ class TimecodeCalculator(tk.Tk):
         title.grid(
             row=0,
             column=0,
-            columnspan=3,
+            columnspan=2,
             pady=(0, 4),
         )
 
@@ -104,143 +254,158 @@ class TimecodeCalculator(tk.Tk):
         subtitle.grid(
             row=1,
             column=0,
-            columnspan=3,
-            pady=(0, 14),
+            columnspan=2,
+            pady=(0, 18),
         )
 
-        ttk.Label(self, text="Frame Rate").grid(
+        ttk.Label(
+            self,
+            text="Frame Rate",
+        ).grid(
             row=2,
             column=0,
             sticky="w",
-            padx=(0, 10),
+            padx=(0, 15),
             pady=6,
         )
 
         frame_rate_dropdown = ttk.Combobox(
             self,
             textvariable=self.frame_rate,
-            values=("24", "30", "59", "60"),
+            values=FRAME_RATES,
             state="readonly",
             width=8,
             justify="center",
-            font=("TkFixedFont", 13),
         )
-
         frame_rate_dropdown.grid(
             row=2,
             column=1,
-            columnspan=2,
+            sticky="w",
             pady=6,
         )
 
-        ttk.Label(self, text="Timecode 1").grid(
+        ttk.Label(
+            self,
+            text="Operation",
+        ).grid(
             row=3,
             column=0,
             sticky="w",
-            padx=(0, 10),
+            padx=(0, 15),
             pady=6,
         )
 
-        first_entry = ttk.Entry(
+        operation_dropdown = ttk.Combobox(
             self,
-            textvariable=self.first_timecode,
-            width=18,
+            textvariable=self.operation,
+            values=("Add", "Subtract"),
+            state="readonly",
+            width=12,
             justify="center",
-            font=("TkFixedFont", 13),
         )
-        first_entry.grid(
+        operation_dropdown.grid(
             row=3,
             column=1,
-            columnspan=2,
+            sticky="w",
             pady=6,
         )
+        operation_dropdown.bind(
+            "<<ComboboxSelected>>",
+            self._update_operation_display,
+        )
 
-        ttk.Label(self, text="Timecode 2").grid(
+        self.first_label = ttk.Label(
+            self,
+            text="Timecode 1",
+        )
+        self.first_label.grid(
             row=4,
             column=0,
             sticky="w",
-            padx=(0, 10),
-            pady=6,
+            padx=(0, 15),
+            pady=8,
         )
 
-        second_entry = ttk.Entry(
-            self,
-            textvariable=self.second_timecode,
-            width=18,
-            justify="center",
-            font=("TkFixedFont", 13),
-        )
-        second_entry.grid(
+        self.first_input = TimecodeInput(self)
+        self.first_input.grid(
             row=4,
             column=1,
-            columnspan=2,
-            pady=6,
+            sticky="w",
+            pady=8,
         )
 
-        ttk.Label(self, text="Paid SOM").grid(
+        self.second_label = ttk.Label(
+            self,
+            text="Timecode 2",
+        )
+        self.second_label.grid(
             row=5,
             column=0,
             sticky="w",
-            padx=(0, 10),
-            pady=6,
+            padx=(0, 15),
+            pady=8,
         )
 
-        third_entry = ttk.Entry(
-            self,
-            textvariable=self.third_timecode,
-            width=18,
-            justify="center",
-            font=("TkFixedFont", 13),
-        )
-        third_entry.grid(
+        self.second_input = TimecodeInput(self)
+        self.second_input.grid(
             row=5,
             column=1,
-            columnspan=2,
-            pady=6,
+            sticky="w",
+            pady=8,
         )
 
-        add_button = ttk.Button(
+        self.paid_som_label = ttk.Label(
             self,
-            text="Add",
-            command=lambda: self.calculate("add"),
-            width=12,
+            text="Paid SOM",
         )
-        add_button.grid(
+        self.paid_som_label.grid(
+            row=6,
+            column=0,
+            sticky="w",
+            padx=(0, 15),
+            pady=8,
+        )
+
+        self.paid_som_input = TimecodeInput(self)
+        self.paid_som_input.grid(
             row=6,
             column=1,
-            padx=(0, 5),
-            pady=(14, 10),
+            sticky="w",
+            pady=8,
         )
 
-        subtract_button = ttk.Button(
+        calculate_button = ttk.Button(
             self,
-            text="Subtract",
-            command=lambda: self.calculate("subtract"),
-            width=12,
+            text="Calculate",
+            command=self.calculate,
+            width=16,
         )
-        subtract_button.grid(
-            row=6,
-            column=2,
-            padx=(5, 0),
-            pady=(14, 10),
+        calculate_button.grid(
+            row=7,
+            column=0,
+            columnspan=2,
+            pady=(16, 10),
         )
 
         ttk.Separator(
             self,
             orient="horizontal",
         ).grid(
-            row=7,
+            row=8,
             column=0,
-            columnspan=3,
+            columnspan=2,
             sticky="ew",
             pady=8,
         )
 
-        ttk.Label(self, text="Result").grid(
-            row=8,
+        ttk.Label(
+            self,
+            text="Result",
+        ).grid(
+            row=9,
             column=0,
             sticky="w",
-            padx=(0, 10),
+            padx=(0, 15),
             pady=8,
         )
 
@@ -252,9 +417,9 @@ class TimecodeCalculator(tk.Tk):
             font=("TkFixedFont", 15, "bold"),
         )
         result_label.grid(
-            row=8,
+            row=9,
             column=1,
-            columnspan=2,
+            sticky="w",
             pady=8,
         )
 
@@ -262,46 +427,89 @@ class TimecodeCalculator(tk.Tk):
             self,
             text="Clear",
             command=self.clear,
+            width=12,
         )
         clear_button.grid(
-            row=9,
-            column=1,
+            row=10,
+            column=0,
             columnspan=2,
-            padx=5,
             pady=(12, 0),
         )
 
-        first_entry.focus_set()
-
         self.bind(
             "<Return>",
-            lambda _event: self.calculate("add"),
+            lambda _event: self.calculate(),
         )
 
-    def calculate(self, operation: str) -> None:
+    def _update_operation_display(self, _event=None) -> None:
+        """Show Paid SOM only when subtraction is selected."""
+        if self.operation.get() == "Subtract":
+            self.paid_som_label.grid()
+            self.paid_som_input.grid()
+        else:
+            self.paid_som_label.grid_remove()
+            self.paid_som_input.grid_remove()
+
+    def calculate(self) -> None:
         try:
-            fps = validate_frame_rate(self.frame_rate.get())
+            fps = int(self.frame_rate.get())
+            hour_format = self.hour_format.get()
 
-            first_frames = timecode_to_frames(
-                self.first_timecode.get(),
+            first_hours, _, _, _ = self.first_input.get_values()
+
+            # In 12-hour mode, Timecode 1 must use hours 01 through 12.
+            if hour_format == 12 and first_hours == 0:
+                raise ValueError(
+                    "Timecode 1: hours must be between 01 and 12 "
+                    "in 12-hour mode."
+                )
+
+            first_frames = self.first_input.to_frames(
                 fps,
-            )
-            second_frames = timecode_to_frames(
-                self.second_timecode.get(),
-                fps,
-            )
-            third_frames = timecode_to_frames(
-                self.third_timecode.get(),
-                fps,
+                hour_format,
+                "Timecode 1",
             )
 
-            if operation == "add":
+            second_frames = self.second_input.to_frames(
+                fps,
+                hour_format,
+                "Timecode 2",
+            )
+
+            if self.operation.get() == "Add":
                 total_frames = first_frames + second_frames
+
             else:
+                # In 24-hour mode, 00 in Timecode 1 may mean
+                # midnight at the beginning of the next day.
+                if (
+                    hour_format == 24
+                    and first_hours == 0
+                    and first_frames < second_frames
+                ):
+                    frames_per_day = 24 * 60 * 60 * fps
+                    first_frames += frames_per_day
+
+                # Check after applying the possible midnight rollover.
+                if first_frames <= second_frames:
+                    raise ValueError(
+                        "For subtraction, Timecode 1 must be later "
+                        "than Timecode 2."
+                    )
+
+                # Paid SOM is a duration, so the 12/24-hour setting
+                # does not restrict its hour value.
+                paid_som_frames = self.paid_som_input.to_frames(
+                    fps,
+                    hour_format,
+                    "Paid SOM",
+                    use_hour_format=False,
+                )
+
                 total_frames = (
                     first_frames
                     - second_frames
-                    + third_frames
+                    + paid_som_frames
                 )
 
             self.result.set(
@@ -315,10 +523,121 @@ class TimecodeCalculator(tk.Tk):
             )
 
     def clear(self) -> None:
-        self.first_timecode.set("00:00:00:00")
-        self.second_timecode.set("00:00:00:00")
-        self.third_timecode.set("00:00:00:00")
+        self.first_input.clear()
+        self.second_input.clear()
+        self.paid_som_input.clear()
         self.result.set("00:00:00:00")
+
+    def open_settings(self) -> None:
+        """Open the separate settings window."""
+        if (
+            self.settings_window is not None
+            and self.settings_window.winfo_exists()
+        ):
+            self.settings_window.lift()
+            self.settings_window.focus_force()
+            return
+
+        self.settings_window = tk.Toplevel(self)
+        self.settings_window.title("Settings")
+        self.settings_window.resizable(False, False)
+        self.settings_window.transient(self)
+        self.settings_window.grab_set()
+        self.settings_window.configure(
+            padx=22,
+            pady=22,
+        )
+
+        temporary_hour_format = tk.IntVar(
+            value=self.hour_format.get()
+        )
+
+        ttk.Label(
+            self.settings_window,
+            text="Time Format",
+            font=("TkDefaultFont", 13, "bold"),
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            pady=(0, 12),
+        )
+
+        ttk.Radiobutton(
+            self.settings_window,
+            text="12-hour",
+            variable=temporary_hour_format,
+            value=12,
+        ).grid(
+            row=1,
+            column=0,
+            sticky="w",
+            pady=4,
+        )
+
+        ttk.Radiobutton(
+            self.settings_window,
+            text="24-hour",
+            variable=temporary_hour_format,
+            value=24,
+        ).grid(
+            row=2,
+            column=0,
+            sticky="w",
+            pady=4,
+        )
+
+        description = ttk.Label(
+            self.settings_window,
+            text=(
+                "12-hour mode allows hours from 00–12.\n"
+                "24-hour mode allows hours from 00–23."
+            ),
+            justify="left",
+        )
+        description.grid(
+            row=3,
+            column=0,
+            sticky="w",
+            pady=(10, 18),
+        )
+
+        button_frame = ttk.Frame(self.settings_window)
+        button_frame.grid(
+            row=4,
+            column=0,
+            sticky="e",
+        )
+
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=self.settings_window.destroy,
+        ).grid(
+            row=0,
+            column=0,
+            padx=(0, 6),
+        )
+
+        ttk.Button(
+            button_frame,
+            text="Save",
+            command=lambda: self.save_settings(
+                temporary_hour_format.get()
+            ),
+        ).grid(
+            row=0,
+            column=1,
+        )
+
+    def save_settings(self, selected_format: int) -> None:
+        self.hour_format.set(selected_format)
+
+        if (
+            self.settings_window is not None
+            and self.settings_window.winfo_exists()
+        ):
+            self.settings_window.destroy()
 
 
 if __name__ == "__main__":
