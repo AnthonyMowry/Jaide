@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -34,12 +34,12 @@ jobs:
           python -m PyInstaller
           --onefile
           --windowed
-          --name TimecodeCalculator
-          timecode_calculator.py
+          --name JAIDE
+          JAIDE.py
 
       - name: Upload Windows executable
         uses: actions/upload-artifact@v7
         with:
-          name: TimecodeCalculator-Windows
-          path: dist/TimecodeCalculator.exe
+          name: JAIDE-Windows
+          path: dist/JAIDE.exe
           if-no-files-found: error
