@@ -1,21 +1,42 @@
+from __future__ import annotations
+
+from pathlib import Path
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
+
+import customtkinter as ctk
 
 
+APP_VERSION = "TIMECODE CALC"
 FRAME_RATES = ("24", "30", "59", "60")
 
+# Deep emerald palette: charcoal-green surfaces with emerald accents.
+BG = "#222222"
+SURFACE = "#101B17"
+CARD = "#14251F"
+ENTRY = "#0A1511"
+BORDER = "#176B50"
+ACCENT = "#059669"
+ACCENT_HOVER = "#10B981"
+ACCENT_DARK = "#065F46"
+TEXT = "#F1F7F4"
+MUTED = "#9AAFA6"
+WHITE = "#FFFFFF"
 
-class TimecodeInput(ttk.Frame):
-    """A reusable HH:MM:SS:FF timecode input."""
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("green")
 
-    def __init__(self, parent) -> None:
-        super().__init__(parent)
+
+class TimecodeInput(ctk.CTkFrame):
+    """Compact reusable HH:MM:SS:FF input."""
+
+    def __init__(self, parent: tk.Misc) -> None:
+        super().__init__(parent, fg_color="transparent")
 
         self.hours = tk.StringVar(value="00")
         self.minutes = tk.StringVar(value="00")
         self.seconds = tk.StringVar(value="00")
         self.frames = tk.StringVar(value="00")
-
         self.variables = (
             self.hours,
             self.minutes,
@@ -23,441 +44,367 @@ class TimecodeInput(ttk.Frame):
             self.frames,
         )
 
-        labels = ("HH", "MM", "SS", "FF")
+        validation = (self.register(self._validate_integer), "%P")
 
-        validation = (
-            self.register(self._validate_integer),
-            "%P",
-        )
-
-        for index, (variable, label_text) in enumerate(
-            zip(self.variables, labels)
+        for index, (variable, caption) in enumerate(
+            zip(self.variables, ("HH", "MM", "SS", "FF"))
         ):
-            entry_column = index * 2
+            column = index * 2
 
-            entry = ttk.Entry(
+            field = ctk.CTkEntry(
                 self,
                 textvariable=variable,
-                width=4,
+                width=49,
+                height=37,
                 justify="center",
-                font=("TkFixedFont", 13),
+                corner_radius=10,
+                border_width=1,
+                border_color=BORDER,
+                fg_color=ENTRY,
+                text_color=TEXT,
+                font=ctk.CTkFont(family="Courier New", size=14, weight="bold"),
                 validate="key",
                 validatecommand=validation,
             )
-            entry.grid(
-                row=0,
-                column=entry_column,
-                padx=2,
-            )
-
-            entry.bind(
+            field.grid(row=0, column=column, padx=2)
+            field.bind(
                 "<FocusIn>",
-                lambda _event, widget=entry: widget.select_range(0, "end"),
+                lambda _event, widget=field: widget.select_range(0, "end"),
             )
-
-            entry.bind(
+            field.bind(
                 "<FocusOut>",
                 lambda _event, value=variable: self._pad_value(value),
             )
 
-            ttk.Label(
+            ctk.CTkLabel(
                 self,
-                text=label_text,
-                anchor="center",
-            ).grid(
-                row=1,
-                column=entry_column,
-                pady=(3, 0),
-            )
+                text=caption,
+                width=49,
+                text_color=MUTED,
+                font=ctk.CTkFont(size=9, weight="bold"),
+            ).grid(row=1, column=column, pady=(2, 0))
 
             if index < 3:
-                ttk.Label(
+                ctk.CTkLabel(
                     self,
                     text=":",
-                    font=("TkFixedFont", 13, "bold"),
-                ).grid(
-                    row=0,
-                    column=entry_column + 1,
-                )
+                    width=7,
+                    text_color=ACCENT_HOVER,
+                    font=ctk.CTkFont(size=15, weight="bold"),
+                ).grid(row=0, column=column + 1)
 
     @staticmethod
     def _validate_integer(proposed_value: str) -> bool:
-        """
-        Allow blank input while editing or an integer containing
-        no more than two digits.
-        """
-        return (
-            proposed_value == ""
-            or (
-                proposed_value.isdigit()
-                and len(proposed_value) <= 2
-            )
+        return proposed_value == "" or (
+            proposed_value.isdigit() and len(proposed_value) <= 2
         )
 
     @staticmethod
     def _pad_value(variable: tk.StringVar) -> None:
-        """Convert blank values to 00 and pad single digits."""
         value = variable.get().strip()
-
-        if value == "":
-            variable.set("00")
-        else:
-            variable.set(value.zfill(2))
+        variable.set("00" if not value else value.zfill(2))
 
     def get_values(self) -> tuple[int, int, int, int]:
-        """Return the four entered timecode values as integers."""
-        values = []
-
-        for variable in self.variables:
-            text = variable.get().strip()
-            values.append(int(text) if text else 0)
-
-        return tuple(values)
+        return tuple(
+            int(variable.get().strip()) if variable.get().strip() else 0
+            for variable in self.variables
+        )  # type: ignore[return-value]
 
     def to_frames(
-            self,
-            fps: int,
-            hour_format: int,
-            field_name: str,
-            use_hour_format: bool = True,
-        ) -> int:
-            """Validate the entered timecode and convert it to frames."""
-            hours, minutes, seconds, frames = self.get_values()
+        self,
+        fps: int,
+        hour_format: int,
+        field_name: str,
+        use_hour_format: bool = True,
+    ) -> int:
+        hours, minutes, seconds, frames = self.get_values()
 
-            # Only apply the 12/24-hour restriction when requested.
-            if use_hour_format:
-                if hour_format == 12:
-                    if not 0 <= hours <= 12:
-                        raise ValueError(
-                            f"{field_name}: hours must be between 00 and 12 "
-                            "in 12-hour mode."
-                        )
-                else:
-                    if not 0 <= hours <= 23:
-                        raise ValueError(
-                            f"{field_name}: hours must be between 00 and 23 "
-                            "in 24-hour mode."
-                        )
-
-            if not 0 <= minutes <= 59:
+        if use_hour_format:
+            if hour_format == 12 and not 0 <= hours <= 12:
                 raise ValueError(
-                    f"{field_name}: minutes must be between 00 and 59."
+                    f"{field_name}: hours must be between 00 and 12 "
+                    "in 12-hour mode."
+                )
+            if hour_format == 24 and not 0 <= hours <= 23:
+                raise ValueError(
+                    f"{field_name}: hours must be between 00 and 23 "
+                    "in 24-hour mode."
                 )
 
-            if not 0 <= seconds <= 59:
-                raise ValueError(
-                    f"{field_name}: seconds must be between 00 and 59."
-                )
-
-            if not 0 <= frames < fps:
-                raise ValueError(
-                    f"{field_name}: at {fps} FPS, frames must be between "
-                    f"00 and {fps - 1:02d}."
-                )
-
-            return (
-                (((hours * 60) + minutes) * 60 + seconds)
-                * fps
-                + frames
+        if not 0 <= minutes <= 59:
+            raise ValueError(f"{field_name}: minutes must be between 00 and 59.")
+        if not 0 <= seconds <= 59:
+            raise ValueError(f"{field_name}: seconds must be between 00 and 59.")
+        if not 0 <= frames < fps:
+            raise ValueError(
+                f"{field_name}: at {fps} FPS, frames must be between "
+                f"00 and {fps - 1:02d}."
             )
 
+        return ((((hours * 60) + minutes) * 60 + seconds) * fps) + frames
+
     def clear(self) -> None:
-        """Reset all four boxes to zero."""
         for variable in self.variables:
             variable.set("00")
 
 
 def frames_to_timecode(total_frames: int, fps: int) -> str:
-    """Convert a total number of frames to HH:MM:SS:FF."""
     sign = "-" if total_frames < 0 else ""
     total_frames = abs(total_frames)
 
-    hours, remainder = divmod(
-        total_frames,
-        60 * 60 * fps,
-    )
-    minutes, remainder = divmod(
-        remainder,
-        60 * fps,
-    )
-    seconds, frames = divmod(
-        remainder,
-        fps,
-    )
+    hours, remainder = divmod(total_frames, 60 * 60 * fps)
+    minutes, remainder = divmod(remainder, 60 * fps)
+    seconds, frames = divmod(remainder, fps)
 
-    return (
-        f"{sign}{hours:02d}:"
-        f"{minutes:02d}:"
-        f"{seconds:02d}:"
-        f"{frames:02d}"
-    )
+    return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}"
 
 
-class TimecodeCalculator(tk.Tk):
+class InputRow(ctk.CTkFrame):
+    """Compact rounded row containing a label and timecode input."""
+
+    def __init__(self, parent: tk.Misc, title: str) -> None:
+        super().__init__(
+            parent,
+            fg_color=CARD,
+            corner_radius=15,
+            border_width=1,
+            border_color=BORDER,
+        )
+        self.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            self,
+            text=title,
+            width=95,
+            anchor="w",
+            text_color=TEXT,
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).grid(row=0, column=0, padx=(14, 6), pady=11, sticky="w")
+
+        self.input = TimecodeInput(self)
+        self.input.grid(row=0, column=1, padx=(4, 14), pady=9, sticky="e")
+
+
+class TimecodeCalculator(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
 
-        self.title("Jaide Timecode Calculator")
-        self.resizable(False, False)
-        self.configure(
-            padx=20,
-            pady=20,
-        )
+        self.title(f"JAIDE — {APP_VERSION}")
+        self.configure(fg_color=BG)
+        self.resizable(True, True)
+        self.minsize(460, 420)
 
         self.frame_rate = tk.StringVar(value="30")
         self.operation = tk.StringVar(value="Add")
         self.hour_format = tk.IntVar(value=24)
         self.result = tk.StringVar(value="00:00:00:00")
+        self.settings_window: ctk.CTkToplevel | None = None
 
-        self.settings_window = None
-
-        self._build_menu()
         self._build_interface()
         self._update_operation_display()
 
-    def _build_menu(self) -> None:
-        menu_bar = tk.Menu(self)
+        self.bind("<Return>", lambda _event: self.calculate())
+        self.bind("<Escape>", lambda _event: self.clear())
+        self.after_idle(self._set_startup_geometry)
 
-        options_menu = tk.Menu(
-            menu_bar,
-            tearoff=False,
-        )
-        options_menu.add_command(
-            label="Settings...",
-            command=self.open_settings,
-        )
+        # This makes it immediately obvious which file Python launched.
+        print(f"Running {APP_VERSION} from: {Path(__file__).resolve()}")
 
-        menu_bar.add_cascade(
-            label="Options",
-            menu=options_menu,
-        )
+    def _set_startup_geometry(self) -> None:
+        """Set one compact initial size; never auto-resize afterward."""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
 
-        self.config(menu=menu_bar)
+        width = min(570, max(460, screen_width - 80))
+        height = min(620, max(440, screen_height - 120))
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def _build_interface(self) -> None:
-        title = ttk.Label(
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        self.page = ctk.CTkScrollableFrame(
             self,
+            fg_color=BG,
+            corner_radius=0,
+            scrollbar_button_color=ACCENT_DARK,
+            scrollbar_button_hover_color=BORDER,
+        )
+        self.page.grid(row=0, column=0, sticky="nsew")
+        self.page.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkFrame(self.page, fg_color="transparent")
+        header.grid(row=0, column=0, padx=16, pady=(14, 9), sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+
+        heading = ctk.CTkFrame(header, fg_color="transparent")
+        heading.grid(row=0, column=0, sticky="w")
+
+        ctk.CTkLabel(
+            heading,
             text="JAIDE",
-            font=("TkDefaultFont", 24, "bold"),
-        )
-        title.grid(
-            row=0,
-            column=0,
-            columnspan=2,
-            pady=(0, 4),
-        )
+            text_color=ACCENT_HOVER,
+            font=ctk.CTkFont(size=27, weight="bold"),
+        ).pack(anchor="w")
 
-        subtitle = ttk.Label(
-            self,
-            text="HH:MM:SS:FF",
-        )
-        subtitle.grid(
-            row=1,
-            column=0,
-            columnspan=2,
-            pady=(0, 18),
-        )
+        ctk.CTkLabel(
+            heading,
+            text=APP_VERSION.upper(),
+            text_color=MUTED,
+            font=ctk.CTkFont(size=9, weight="bold"),
+        ).pack(anchor="w")
 
-        ttk.Label(
-            self,
-            text="Frame Rate",
-        ).grid(
-            row=2,
-            column=0,
-            sticky="w",
-            padx=(0, 15),
-            pady=6,
-        )
+        ctk.CTkButton(
+            header,
+            text="Options",
+            width=88,
+            height=34,
+            corner_radius=11,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            text_color=BG,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self.open_settings,
+        ).grid(row=0, column=1, sticky="e")
 
-        frame_rate_dropdown = ttk.Combobox(
-            self,
-            textvariable=self.frame_rate,
-            values=FRAME_RATES,
-            state="readonly",
-            width=8,
-            justify="center",
+        main = ctk.CTkFrame(
+            self.page,
+            fg_color=SURFACE,
+            corner_radius=20,
+            border_width=1,
+            border_color=ACCENT_DARK,
         )
-        frame_rate_dropdown.grid(
-            row=2,
-            column=1,
-            sticky="w",
-            pady=6,
-        )
+        main.grid(row=1, column=0, padx=16, pady=(0, 14), sticky="ew")
+        main.grid_columnconfigure(0, weight=1)
 
-        ttk.Label(
-            self,
-            text="Operation",
-        ).grid(
-            row=3,
-            column=0,
-            sticky="w",
-            padx=(0, 15),
-            pady=6,
-        )
+        controls = ctk.CTkFrame(main, fg_color="transparent")
+        controls.grid(row=0, column=0, padx=14, pady=(14, 10), sticky="ew")
+        controls.grid_columnconfigure(1, weight=1)
 
-        operation_dropdown = ttk.Combobox(
-            self,
-            textvariable=self.operation,
-            values=("Add", "Subtract"),
-            state="readonly",
-            width=12,
-            justify="center",
-        )
-        operation_dropdown.grid(
-            row=3,
-            column=1,
-            sticky="w",
-            pady=6,
-        )
-        operation_dropdown.bind(
-            "<<ComboboxSelected>>",
-            self._update_operation_display,
-        )
+        ctk.CTkLabel(
+            controls,
+            text="FPS",
+            text_color=MUTED,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).grid(row=0, column=0, padx=(0, 8), sticky="w")
 
-        self.first_label = ttk.Label(
-            self,
-            text="Timecode 1",
+        self.frame_rate_menu = ctk.CTkOptionMenu(
+            controls,
+            variable=self.frame_rate,
+            values=list(FRAME_RATES),
+            width=105,
+            height=34,
+            corner_radius=10,
+            fg_color=ENTRY,
+            button_color=ACCENT,
+            button_hover_color=ACCENT_HOVER,
+            dropdown_fg_color=CARD,
+            dropdown_hover_color=ACCENT_DARK,
+            dropdown_text_color=TEXT,
+            text_color=TEXT,
+            dynamic_resizing=False,
         )
-        self.first_label.grid(
-            row=4,
-            column=0,
-            sticky="w",
-            padx=(0, 15),
-            pady=8,
-        )
+        self.frame_rate_menu.grid(row=0, column=1, padx=(0, 12), sticky="w")
 
-        self.first_input = TimecodeInput(self)
-        self.first_input.grid(
-            row=4,
-            column=1,
-            sticky="w",
-            pady=8,
+        self.operation_selector = ctk.CTkSegmentedButton(
+            controls,
+            variable=self.operation,
+            values=["Add", "Subtract"],
+            width=205,
+            height=34,
+            corner_radius=10,
+            border_width=1,
+            fg_color=ENTRY,
+            selected_color=ACCENT,
+            selected_hover_color=ACCENT_HOVER,
+            unselected_color=ENTRY,
+            unselected_hover_color=ACCENT_DARK,
+            text_color=WHITE,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=self._update_operation_display,
         )
+        self.operation_selector.grid(row=0, column=2, sticky="e")
 
-        self.second_label = ttk.Label(
-            self,
-            text="Timecode 2",
-        )
-        self.second_label.grid(
-            row=5,
-            column=0,
-            sticky="w",
-            padx=(0, 15),
-            pady=8,
-        )
+        input_area = ctk.CTkFrame(main, fg_color="transparent")
+        input_area.grid(row=1, column=0, padx=14, sticky="ew")
+        input_area.grid_columnconfigure(0, weight=1)
 
-        self.second_input = TimecodeInput(self)
-        self.second_input.grid(
-            row=5,
-            column=1,
-            sticky="w",
-            pady=8,
-        )
+        self.first_row = InputRow(input_area, "Timecode 1")
+        self.first_row.grid(row=0, column=0, pady=(0, 7), sticky="ew")
+        self.first_input = self.first_row.input
 
-        self.paid_som_label = ttk.Label(
-            self,
-            text="Paid SOM",
-        )
-        self.paid_som_label.grid(
-            row=6,
-            column=0,
-            sticky="w",
-            padx=(0, 15),
-            pady=8,
-        )
+        self.second_row = InputRow(input_area, "Timecode 2")
+        self.second_row.grid(row=1, column=0, pady=7, sticky="ew")
+        self.second_input = self.second_row.input
 
-        self.paid_som_input = TimecodeInput(self)
-        self.paid_som_input.grid(
-            row=6,
-            column=1,
-            sticky="w",
-            pady=8,
-        )
+        self.paid_som_row = InputRow(input_area, "Paid SOM")
+        self.paid_som_row.grid(row=2, column=0, pady=7, sticky="ew")
+        self.paid_som_input = self.paid_som_row.input
 
-        calculate_button = ttk.Button(
-            self,
+        ctk.CTkButton(
+            main,
             text="Calculate",
+            height=43,
+            corner_radius=13,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            text_color=BG,
+            font=ctk.CTkFont(size=14, weight="bold"),
             command=self.calculate,
-            width=16,
-        )
-        calculate_button.grid(
-            row=7,
-            column=0,
-            columnspan=2,
-            pady=(16, 10),
-        )
+        ).grid(row=2, column=0, padx=14, pady=(12, 9), sticky="ew")
 
-        ttk.Separator(
-            self,
-            orient="horizontal",
-        ).grid(
-            row=8,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            pady=8,
+        result_panel = ctk.CTkFrame(
+            main,
+            fg_color=ENTRY,
+            corner_radius=15,
+            border_width=2,
+            border_color=ACCENT,
         )
+        result_panel.grid(row=3, column=0, padx=14, pady=(0, 9), sticky="ew")
+        result_panel.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(
-            self,
-            text="Result",
-        ).grid(
-            row=9,
-            column=0,
-            sticky="w",
-            padx=(0, 15),
-            pady=8,
-        )
+        ctk.CTkLabel(
+            result_panel,
+            text="RESULT",
+            text_color=ACCENT_HOVER,
+            font=ctk.CTkFont(size=10, weight="bold"),
+        ).grid(row=0, column=0, padx=(14, 8), pady=14, sticky="w")
 
-        result_label = ttk.Label(
-            self,
+        ctk.CTkLabel(
+            result_panel,
             textvariable=self.result,
-            anchor="center",
-            width=17,
-            font=("TkFixedFont", 15, "bold"),
-        )
-        result_label.grid(
-            row=9,
-            column=1,
-            sticky="w",
-            pady=8,
-        )
+            text_color=WHITE,
+            font=ctk.CTkFont(family="Courier New", size=20, weight="bold"),
+        ).grid(row=0, column=1, padx=(8, 14), pady=14, sticky="e")
 
-        clear_button = ttk.Button(
-            self,
+        ctk.CTkButton(
+            main,
             text="Clear",
+            height=35,
+            corner_radius=11,
+            fg_color="transparent",
+            hover_color="#1A2C25",
+            border_width=1,
+            border_color=ACCENT_DARK,
+            text_color=MUTED,
             command=self.clear,
-            width=12,
-        )
-        clear_button.grid(
-            row=10,
-            column=0,
-            columnspan=2,
-            pady=(12, 0),
-        )
+        ).grid(row=4, column=0, padx=14, pady=(0, 14), sticky="ew")
 
-        self.bind(
-            "<Return>",
-            lambda _event: self.calculate(),
-        )
-
-    def _update_operation_display(self, _event=None) -> None:
-        """Show Paid SOM only when subtraction is selected."""
+    def _update_operation_display(self, _choice: str | None = None) -> None:
+        """Show or hide Paid SOM without touching main-window geometry."""
         if self.operation.get() == "Subtract":
-            self.paid_som_label.grid()
-            self.paid_som_input.grid()
+            self.paid_som_row.grid()
         else:
-            self.paid_som_label.grid_remove()
-            self.paid_som_input.grid_remove()
+            self.paid_som_row.grid_remove()
 
     def calculate(self) -> None:
         try:
             fps = int(self.frame_rate.get())
             hour_format = self.hour_format.get()
-
             first_hours, _, _, _ = self.first_input.get_values()
 
-            # In 12-hour mode, Timecode 1 must use hours 01 through 12.
             if hour_format == 12 and first_hours == 0:
                 raise ValueError(
                     "Timecode 1: hours must be between 01 and 12 "
@@ -469,7 +416,6 @@ class TimecodeCalculator(tk.Tk):
                 hour_format,
                 "Timecode 1",
             )
-
             second_frames = self.second_input.to_frames(
                 fps,
                 hour_format,
@@ -478,49 +424,32 @@ class TimecodeCalculator(tk.Tk):
 
             if self.operation.get() == "Add":
                 total_frames = first_frames + second_frames
-
             else:
-                # In 24-hour mode, 00 in Timecode 1 may mean
-                # midnight at the beginning of the next day.
                 if (
                     hour_format == 24
                     and first_hours == 0
                     and first_frames < second_frames
                 ):
-                    frames_per_day = 24 * 60 * 60 * fps
-                    first_frames += frames_per_day
+                    first_frames += 24 * 60 * 60 * fps
 
-                # Check after applying the possible midnight rollover.
                 if first_frames <= second_frames:
                     raise ValueError(
                         "For subtraction, Timecode 1 must be later "
                         "than Timecode 2."
                     )
 
-                # Paid SOM is a duration, so the 12/24-hour setting
-                # does not restrict its hour value.
                 paid_som_frames = self.paid_som_input.to_frames(
                     fps,
                     hour_format,
                     "Paid SOM",
                     use_hour_format=False,
                 )
+                total_frames = first_frames - second_frames + paid_som_frames
 
-                total_frames = (
-                    first_frames
-                    - second_frames
-                    + paid_som_frames
-                )
-
-            self.result.set(
-                frames_to_timecode(total_frames, fps)
-            )
+            self.result.set(frames_to_timecode(total_frames, fps))
 
         except ValueError as error:
-            messagebox.showerror(
-                "Invalid Timecode",
-                str(error),
-            )
+            messagebox.showerror("Invalid Timecode", str(error), parent=self)
 
     def clear(self) -> None:
         self.first_input.clear()
@@ -529,115 +458,132 @@ class TimecodeCalculator(tk.Tk):
         self.result.set("00:00:00:00")
 
     def open_settings(self) -> None:
-        """Open the separate settings window."""
-        if (
-            self.settings_window is not None
-            and self.settings_window.winfo_exists()
-        ):
+        """Open options beside the app; never appear centered first."""
+        if self.settings_window is not None and self.settings_window.winfo_exists():
             self.settings_window.lift()
             self.settings_window.focus_force()
             return
 
-        self.settings_window = tk.Toplevel(self)
-        self.settings_window.title("Settings")
-        self.settings_window.resizable(False, False)
-        self.settings_window.transient(self)
-        self.settings_window.grab_set()
-        self.settings_window.configure(
-            padx=22,
-            pady=22,
-        )
+        window = ctk.CTkToplevel(self)
+        self.settings_window = window
+        window.withdraw()
+        window.title("JAIDE Options")
+        window.resizable(False, False)
+        window.configure(fg_color=BG)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_settings)
 
-        temporary_hour_format = tk.IntVar(
-            value=self.hour_format.get()
+        card = ctk.CTkFrame(
+            window,
+            fg_color=SURFACE,
+            corner_radius=18,
+            border_width=1,
+            border_color=ACCENT,
         )
+        card.pack(fill="both", expand=True, padx=14, pady=14)
 
-        ttk.Label(
-            self.settings_window,
+        ctk.CTkLabel(
+            card,
             text="Time Format",
-            font=("TkDefaultFont", 13, "bold"),
-        ).grid(
-            row=0,
-            column=0,
-            sticky="w",
-            pady=(0, 12),
-        )
+            text_color=ACCENT_HOVER,
+            font=ctk.CTkFont(size=19, weight="bold"),
+        ).pack(anchor="w", padx=18, pady=(18, 4))
 
-        ttk.Radiobutton(
-            self.settings_window,
-            text="12-hour",
-            variable=temporary_hour_format,
-            value=12,
-        ).grid(
-            row=1,
-            column=0,
-            sticky="w",
-            pady=4,
-        )
+        temporary_format = tk.StringVar(value=f"{self.hour_format.get()}-hour")
 
-        ttk.Radiobutton(
-            self.settings_window,
-            text="24-hour",
-            variable=temporary_hour_format,
-            value=24,
-        ).grid(
-            row=2,
-            column=0,
-            sticky="w",
-            pady=4,
+        selector = ctk.CTkSegmentedButton(
+            card,
+            variable=temporary_format,
+            values=["12-hour", "24-hour"],
+            height=39,
+            corner_radius=11,
+            fg_color=ENTRY,
+            selected_color=ACCENT,
+            selected_hover_color=ACCENT_HOVER,
+            unselected_color=ENTRY,
+            unselected_hover_color=ACCENT_DARK,
+            text_color=WHITE,
         )
+        selector.pack(fill="x", padx=18, pady=(10, 12))
 
-        description = ttk.Label(
-            self.settings_window,
+        ctk.CTkLabel(
+            card,
             text=(
-                "12-hour mode allows hours from 00–12.\n"
-                "24-hour mode allows hours from 00–23."
+                "12-hour: Timecode 1 uses 01–12.\n"
+                "24-hour: hours use 00–23.\n"
+                "Paid SOM is always a duration."
             ),
             justify="left",
-        )
-        description.grid(
-            row=3,
-            column=0,
-            sticky="w",
-            pady=(10, 18),
-        )
+            anchor="w",
+            text_color=MUTED,
+            font=ctk.CTkFont(size=11),
+        ).pack(fill="x", padx=18, pady=(0, 14))
 
-        button_frame = ttk.Frame(self.settings_window)
-        button_frame.grid(
-            row=4,
-            column=0,
-            sticky="e",
-        )
+        buttons = ctk.CTkFrame(card, fg_color="transparent")
+        buttons.pack(fill="x", padx=18, pady=(0, 18))
+        buttons.grid_columnconfigure((0, 1), weight=1)
 
-        ttk.Button(
-            button_frame,
+        ctk.CTkButton(
+            buttons,
             text="Cancel",
-            command=self.settings_window.destroy,
-        ).grid(
-            row=0,
-            column=0,
-            padx=(0, 6),
-        )
+            height=37,
+            corner_radius=11,
+            fg_color="transparent",
+            hover_color="#1A2C25",
+            border_width=1,
+            border_color=ACCENT_DARK,
+            text_color=MUTED,
+            command=self._close_settings,
+        ).grid(row=0, column=0, padx=(0, 5), sticky="ew")
 
-        ttk.Button(
-            button_frame,
+        ctk.CTkButton(
+            buttons,
             text="Save",
-            command=lambda: self.save_settings(
-                temporary_hour_format.get()
-            ),
-        ).grid(
-            row=0,
-            column=1,
-        )
+            height=37,
+            corner_radius=11,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            text_color=BG,
+            command=lambda: self.save_settings(temporary_format.get()),
+        ).grid(row=0, column=1, padx=(5, 0), sticky="ew")
 
-    def save_settings(self, selected_format: int) -> None:
-        self.hour_format.set(selected_format)
+        window.update_idletasks()
+        width = max(350, window.winfo_reqwidth())
+        height = window.winfo_reqheight()
+        gap = 12
 
-        if (
-            self.settings_window is not None
-            and self.settings_window.winfo_exists()
-        ):
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        right_x = self.winfo_x() + self.winfo_width() + gap
+        left_x = self.winfo_x() - width - gap
+
+        if right_x + width <= screen_width - 10:
+            x = right_x
+        elif left_x >= 10:
+            x = left_x
+        else:
+            x = max(10, min(self.winfo_x(), screen_width - width - 10))
+
+        y = max(10, min(self.winfo_y() + 30, screen_height - height - 50))
+
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        window.deiconify()
+        window.lift()
+        window.grab_set()
+        window.focus_force()
+
+    def _close_settings(self) -> None:
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            try:
+                self.settings_window.grab_release()
+            except tk.TclError:
+                pass
             self.settings_window.destroy()
+        self.settings_window = None
+
+    def save_settings(self, selected_format: str) -> None:
+        self.hour_format.set(12 if selected_format == "12-hour" else 24)
+        self._close_settings()
 
 
 if __name__ == "__main__":
