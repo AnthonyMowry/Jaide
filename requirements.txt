@@ -1,2 +1,2 @@
-pyinstaller
-customtkinter==6.0.0
+customtkinter==5.2.2
+pyinstaller>=6.0,<7.0
